@@ -1,6 +1,7 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
-using Microsoft.EntityFrameworkCore;
 
 namespace BusinessObjects.Models;
 
@@ -22,6 +23,21 @@ public partial class FunewsManagementContext : DbContext
     public virtual DbSet<SystemAccount> SystemAccounts { get; set; }
 
     public virtual DbSet<Tag> Tags { get; set; }
+    private string GetConnectionString()
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsettings.json", true, true).Build();
+        return configuration["ConnectionStrings:FUNewsManagementDB"];
+    }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        if (!optionsBuilder.IsConfigured)
+        {
+            optionsBuilder.UseSqlServer(GetConnectionString());
+        }
+    }
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -30,7 +46,7 @@ public partial class FunewsManagementContext : DbContext
         {
             entity.ToTable("Category");
 
-            entity.Property(e => e.CategoryId).HasColumnName("CategoryID");
+            entity.Property(e => e.CategoryId).ValueGeneratedOnAdd().HasColumnName("CategoryID");
             entity.Property(e => e.CategoryDesciption).HasMaxLength(250);
             entity.Property(e => e.CategoryName).HasMaxLength(100);
             entity.Property(e => e.ParentCategoryId).HasColumnName("ParentCategoryID");
