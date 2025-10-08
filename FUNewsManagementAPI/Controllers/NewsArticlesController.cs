@@ -21,7 +21,6 @@ public class NewsArticlesController : ControllerBase
         _db = db;
     }
 
-    // Request DTOs to avoid binding navigation properties
     public sealed class CreateNewsArticleRequest
     {
         public string? NewsTitle { get; set; }
@@ -138,11 +137,9 @@ public class NewsArticlesController : ControllerBase
         if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
         var currentUserId = short.Parse(userIdStr);
 
-        // Ownership check: only creator can update
         if (existing.CreatedById != currentUserId)
             return StatusCode(StatusCodes.Status403Forbidden, "Only the creator can update this article.");
 
-        // Update only provided fields
         if (request.NewsTitle != null) existing.NewsTitle = request.NewsTitle;
         if (!string.IsNullOrWhiteSpace(request.Headline)) existing.Headline = request.Headline;
         if (request.NewsContent != null) existing.NewsContent = request.NewsContent;
@@ -168,7 +165,6 @@ public class NewsArticlesController : ControllerBase
         if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
         var currentUserId = short.Parse(userIdStr);
 
-        // Ownership check: only creator can delete
         if (existing.CreatedById != currentUserId)
             return StatusCode(StatusCodes.Status403Forbidden, "Only the creator can delete this article.");
 
@@ -199,11 +195,9 @@ public class NewsArticlesController : ControllerBase
         [FromQuery] DateTime startDate,
         [FromQuery] DateTime endDate)
     {
-        // Normalize to UTC (CreatedDate is saved as UTC in Create)
         var start = DateTime.SpecifyKind(startDate, DateTimeKind.Utc);
         var end = DateTime.SpecifyKind(endDate, DateTimeKind.Utc);
 
-        // If end has no time component (00:00), include the entire day
         if (end.TimeOfDay == TimeSpan.Zero)
             end = end.Date.AddDays(1).AddTicks(-1);
 
@@ -233,7 +227,6 @@ public class NewsArticlesController : ControllerBase
         if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
         var currentUserId = short.Parse(userIdStr);
 
-        // Ownership check: only creator can modify tags
         if (article.CreatedById != currentUserId)
             return StatusCode(StatusCodes.Status403Forbidden, "Only the creator can modify this article's tags.");
 
