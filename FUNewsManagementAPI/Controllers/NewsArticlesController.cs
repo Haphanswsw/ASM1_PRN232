@@ -138,6 +138,10 @@ public class NewsArticlesController : ControllerBase
         if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
         var currentUserId = short.Parse(userIdStr);
 
+        // Ownership check: only creator can update
+        if (existing.CreatedById != currentUserId)
+            return StatusCode(StatusCodes.Status403Forbidden, "Only the creator can update this article.");
+
         // Update only provided fields
         if (request.NewsTitle != null) existing.NewsTitle = request.NewsTitle;
         if (!string.IsNullOrWhiteSpace(request.Headline)) existing.Headline = request.Headline;
@@ -160,9 +164,18 @@ public class NewsArticlesController : ControllerBase
         var existing = await _repo.GetByIdAsync(id);
         if (existing == null) return NotFound();
 
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
+        var currentUserId = short.Parse(userIdStr);
+
+        // Ownership check: only creator can delete
+        if (existing.CreatedById != currentUserId)
+            return StatusCode(StatusCodes.Status403Forbidden, "Only the creator can delete this article.");
+
         await _repo.DeleteAsync(id);
         return NoContent();
     }
+
     [HttpGet("mine")]
     [Authorize(Roles = "Staff,Admin")]
     public async Task<ActionResult<IEnumerable<NewsArticle>>> GetMine()
@@ -215,6 +228,14 @@ public class NewsArticlesController : ControllerBase
     {
         var article = await _db.NewsArticles.Include(n => n.Tags).FirstOrDefaultAsync(n => n.NewsArticleId == id);
         if (article == null) return NotFound();
+
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
+        var currentUserId = short.Parse(userIdStr);
+
+        // Ownership check: only creator can modify tags
+        if (article.CreatedById != currentUserId)
+            return StatusCode(StatusCodes.Status403Forbidden, "Only the creator can modify this article's tags.");
 
         var tags = await _db.Tags.Where(t => request.TagIds.Contains(t.TagId)).ToListAsync();
         article.Tags.Clear();
