@@ -50,11 +50,9 @@ public class SystemAccountsController : ControllerBase
             AccountId = dto.AccountId,
             AccountName = dto.AccountName,
             AccountEmail = dto.AccountEmail,
-            AccountRole = dto.AccountRole
+            AccountRole = dto.AccountRole,
+            AccountPassword = dto.AccountPassword
         };
-
-        var hasher = new PasswordHasher<SystemAccount>();
-        entity.AccountPassword = hasher.HashPassword(entity, dto.AccountPassword);
 
         await _repo.AddAsync(entity);
         return CreatedAtAction(nameof(GetById), new { id = entity.AccountId }, entity);
@@ -66,14 +64,18 @@ public class SystemAccountsController : ControllerBase
         var existing = await _repo.GetByIdAsync(id);
         if (existing == null) return NotFound();
 
-        existing.AccountName = dto.AccountName ?? existing.AccountName;
-        existing.AccountEmail = dto.AccountEmail ?? existing.AccountEmail;
-        existing.AccountRole = dto.AccountRole ?? existing.AccountRole;
+        if (!string.IsNullOrWhiteSpace(dto.AccountName))
+            existing.AccountName = dto.AccountName;
+
+        if (!string.IsNullOrWhiteSpace(dto.AccountEmail))
+            existing.AccountEmail = dto.AccountEmail;
+
+        if (dto.AccountRole.HasValue)
+            existing.AccountRole = dto.AccountRole;
 
         if (!string.IsNullOrWhiteSpace(dto.AccountPassword))
         {
-            var hasher = new PasswordHasher<SystemAccount>();
-            existing.AccountPassword = hasher.HashPassword(existing, dto.AccountPassword);
+            existing.AccountPassword = dto.AccountPassword;
         }
 
         await _repo.UpdateAsync(existing);
