@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.OData.Query; // added
 
 namespace FUNewsManagementAPI.Controllers;
 
@@ -18,9 +19,10 @@ public class TagsController : ControllerBase
 
     [HttpGet]
     [Authorize(Roles = "Staff,Admin")]
-    public async Task<ActionResult<IEnumerable<Tag>>> GetAll()
+    [EnableQuery(PageSize = 50)]
+    public IActionResult GetAll()
     {
-        var items = await _db.Tags.OrderBy(t => t.TagName).ToListAsync();
-        return Ok(items);
+        var query = _db.Tags.AsNoTracking().OrderBy(t => t.TagName);
+        return Ok(query);
     }
 }

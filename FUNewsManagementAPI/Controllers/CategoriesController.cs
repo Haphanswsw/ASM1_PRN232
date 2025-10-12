@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Repositories.Repositories;
+using Microsoft.AspNetCore.OData.Query;
 
 namespace FUNewsManagementAPI.Controllers;
 
@@ -21,7 +22,6 @@ public class CategoriesController : ControllerBase
         _db = db;
     }
 
-    // Request DTOs to avoid binding navigation properties
     public sealed class CategoryCreateRequest
     {
         [Required]
@@ -39,13 +39,13 @@ public class CategoriesController : ControllerBase
         public bool? IsActive { get; set; }
     }
 
-    // Anyone can view categories
     [HttpGet]
     [AllowAnonymous]
-    public async Task<ActionResult<IEnumerable<Category>>> GetAll()
+    [EnableQuery(PageSize = 50)]
+    public IActionResult GetAll()
     {
-        var items = await _repo.GetAllAsync();
-        return Ok(items);
+        var query = _db.Categories.AsNoTracking();
+        return Ok(query);
     }
 
     [HttpGet("{id:int}")]
@@ -57,25 +57,21 @@ public class CategoriesController : ControllerBase
         return Ok(item);
     }
 
-    // Staff/Admin manage categories
     [HttpPost]
     public async Task<ActionResult<Category>> Create([FromBody] CategoryCreateRequest request)
     {
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
-        // Normalize: 0 or less => null (no parent)
         short? normalizedParent = request.ParentCategoryId.HasValue && request.ParentCategoryId.Value <= 0
             ? null
             : request.ParentCategoryId;
 
-        // Validate parent if provided (> 0)
         if (normalizedParent.HasValue)
         {
             var parentExists = await _db.Categories.AnyAsync(c => c.CategoryId == normalizedParent.Value);
             if (!parentExists) return BadRequest("Parent category not found.");
         }
 
-        // Let DB generate CategoryId (IDENTITY)
         var entity = new Category
         {
             CategoryName = request.CategoryName,
@@ -84,7 +80,7 @@ public class CategoriesController : ControllerBase
             IsActive = request.IsActive ?? true
         };
 
-        await _repo.AddAsync(entity); // after SaveChanges, entity.CategoryId is populated
+        await _repo.AddAsync(entity);
         return CreatedAtAction(nameof(GetById), new { id = entity.CategoryId }, entity);
     }
 

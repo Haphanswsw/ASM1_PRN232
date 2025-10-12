@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Repositories.Repositories;
-using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.OData.Query;
 
 namespace FUNewsManagementAPI.Controllers;
 
@@ -22,10 +22,11 @@ public class SystemAccountsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<SystemAccount>>> GetAll()
+    [EnableQuery(PageSize = 50)]
+    public IActionResult GetAll()
     {
-        var items = await _repo.GetAllAsync();
-        return Ok(items);
+        var query = _db.SystemAccounts.AsNoTracking();
+        return Ok(query);
     }
 
     [HttpGet("{id:int}")]

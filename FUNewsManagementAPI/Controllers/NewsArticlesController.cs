@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Repositories.Repositories;
+using Microsoft.AspNetCore.OData.Query; // added
 
 namespace FUNewsManagementAPI.Controllers;
 
@@ -48,13 +49,15 @@ public class NewsArticlesController : ControllerBase
     // Public can view active news
     [HttpGet("public")]
     [AllowAnonymous]
-    public async Task<ActionResult<IEnumerable<NewsArticle>>> GetPublicActive()
+    [EnableQuery(PageSize = 50)]
+    public IActionResult GetPublicActive()
     {
-        var items = await _db.NewsArticles
+        var query = _db.NewsArticles
+            .AsNoTracking()
             .Where(n => n.NewsStatus == true)
-            .OrderByDescending(n => n.CreatedDate)
-            .ToListAsync();
-        return Ok(items);
+            .OrderByDescending(n => n.CreatedDate);
+
+        return Ok(query);
     }
 
     [HttpGet("public/{id}")]
@@ -62,6 +65,7 @@ public class NewsArticlesController : ControllerBase
     public async Task<ActionResult<NewsArticle>> GetPublicById(string id)
     {
         var item = await _db.NewsArticles
+            .AsNoTracking()
             .FirstOrDefaultAsync(n => n.NewsArticleId == id && n.NewsStatus == true);
         if (item == null) return NotFound();
         return Ok(item);
@@ -70,10 +74,12 @@ public class NewsArticlesController : ControllerBase
     // Staff/Admin management
     [HttpGet]
     [Authorize(Roles = "Staff,Admin")]
-    public async Task<ActionResult<IEnumerable<NewsArticle>>> GetAll()
+    [EnableQuery(PageSize = 50)]
+    public IActionResult GetAll()
     {
-        var items = await _repo.GetAllAsync();
-        return Ok(items);
+        // Expose IQueryable so OData can apply $filter/$orderby/$expand server-side
+        var query = _db.NewsArticles.AsNoTracking();
+        return Ok(query);
     }
 
     [HttpGet("{id}")]
@@ -174,26 +180,25 @@ public class NewsArticlesController : ControllerBase
 
     [HttpGet("mine")]
     [Authorize(Roles = "Staff,Admin")]
-    public async Task<ActionResult<IEnumerable<NewsArticle>>> GetMine()
+    [EnableQuery(PageSize = 50)]
+    public IActionResult GetMine()
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userIdStr)) return Unauthorized();
         var currentUserId = short.Parse(userIdStr);
 
-        var items = await _db.NewsArticles
+        var query = _db.NewsArticles
+            .AsNoTracking()
             .Where(n => n.CreatedById == currentUserId)
-            .OrderByDescending(n => n.CreatedDate)
-            .Include(n => n.Tags)
-            .ToListAsync();
+            .OrderByDescending(n => n.CreatedDate);
 
-        return Ok(items);
+        return Ok(query);
     }
 
     [HttpGet("report")]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<IEnumerable<NewsArticle>>> GetReport(
-        [FromQuery] DateTime startDate,
-        [FromQuery] DateTime endDate)
+    [EnableQuery(PageSize = 100)]
+    public IActionResult GetReport([FromQuery] DateTime startDate, [FromQuery] DateTime endDate)
     {
         var start = DateTime.SpecifyKind(startDate, DateTimeKind.Utc);
         var end = DateTime.SpecifyKind(endDate, DateTimeKind.Utc);
@@ -204,16 +209,11 @@ public class NewsArticlesController : ControllerBase
         if (end < start)
             return BadRequest(new { message = "endDate must be >= startDate." });
 
-        var items = await _db.NewsArticles
+        var query = _db.NewsArticles
             .AsNoTracking()
-            .Where(n => n.CreatedDate >= start && n.CreatedDate <= end)
-            .OrderByDescending(n => n.CreatedDate)
-            .Include(n => n.Category)
-            .Include(n => n.CreatedBy)
-            .Include(n => n.Tags)
-            .ToListAsync();
+            .Where(n => n.CreatedDate >= start && n.CreatedDate <= end);
 
-        return Ok(items);
+        return Ok(query);
     }
 
     [HttpPut("{id}/tags")]

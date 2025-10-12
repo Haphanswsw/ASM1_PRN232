@@ -2,6 +2,7 @@ using BusinessObjects.Models;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.OData;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,13 +23,18 @@ builder.Services.AddScoped<Repositories.Repositories.ISystemAccountRepository, R
 builder.Services.AddScoped<DataAccess.DataAccessLayer.TagDAO>();
 builder.Services.AddScoped<Repositories.Repositories.ITagRepository, Repositories.Repositories.TagRepository>();
 
-// JSON: prevent cycles and allow deeper trees
-builder.Services.AddControllers().AddJsonOptions(o =>
-{
-    o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-    o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-    o.JsonSerializerOptions.MaxDepth = 256;
-});
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(o =>
+    {
+        o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        o.JsonSerializerOptions.MaxDepth = 256;
+    })
+    .AddOData(opt =>
+    {
+        opt.Select().Filter().OrderBy().Expand().Count().SetMaxTop(100);
+    });
 
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
