@@ -9,7 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<RoleSettings>(builder.Configuration.GetSection("RoleSettings"));
 
 builder.Services.AddDbContext<FunewsManagementContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("FUNewsManagementDB"))); // FIXED: use correct key
+    options.UseSqlServer(builder.Configuration.GetConnectionString("FUNewsManagementDB")));
 
 builder.Services.AddScoped<DataAccess.DataAccessLayer.CategoryDAO>();
 builder.Services.AddScoped<Repositories.Repositories.ICategoryRepository, Repositories.Repositories.CategoryRepository>();
