@@ -1,16 +1,24 @@
 using BusinessObjects.Models;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.EntityFrameworkCore;
-using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.OData;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OData.Edm;
+using Microsoft.OData.ModelBuilder;
+using Microsoft.OpenApi.Models;
+using System.Text;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Role settings
 builder.Services.Configure<RoleSettings>(builder.Configuration.GetSection("RoleSettings"));
 
+// EF Core
 builder.Services.AddDbContext<FunewsManagementContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("FUNewsManagementDB")));
 
+// DI registrations
 builder.Services.AddScoped<DataAccess.DataAccessLayer.CategoryDAO>();
 builder.Services.AddScoped<Repositories.Repositories.ICategoryRepository, Repositories.Repositories.CategoryRepository>();
 
@@ -23,6 +31,7 @@ builder.Services.AddScoped<Repositories.Repositories.ISystemAccountRepository, R
 builder.Services.AddScoped<DataAccess.DataAccessLayer.TagDAO>();
 builder.Services.AddScoped<Repositories.Repositories.ITagRepository, Repositories.Repositories.TagRepository>();
 
+// Controllers + OData
 builder.Services
     .AddControllers()
     .AddJsonOptions(o =>
@@ -34,22 +43,62 @@ builder.Services
     .AddOData(opt =>
     {
         opt.Select().Filter().OrderBy().Expand().Count().SetMaxTop(100);
+        opt.AddRouteComponents("odata", GetEdmModel());
     });
 
+// JWT Authentication
+var jwtSection = builder.Configuration.GetSection("Authentication:Jwt");
+var jwtKey = jwtSection["Key"];
+var jwtIssuer = jwtSection["Issuer"];
+var jwtAudience = jwtSection["Audience"];
+
+if (string.IsNullOrWhiteSpace(jwtKey))
+    throw new InvalidOperationException("Authentication:Jwt:Key is not configured.");
+
 builder.Services
-    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options =>
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        options.Cookie.Name = builder.Configuration["Authentication:Cookie:CookieName"] ?? "FUNews.Auth";
-        options.SlidingExpiration = true;
-        options.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
-        options.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+        options.RequireHttpsMetadata = false; // set true in production behind HTTPS
+        options.SaveToken = true;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = !string.IsNullOrWhiteSpace(jwtIssuer),
+            ValidateAudience = !string.IsNullOrWhiteSpace(jwtAudience),
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            ClockSkew = TimeSpan.FromMinutes(1),
+            // Ensure role/name claims line up with [Authorize(Roles=...)] and ClaimTypes lookups
+            NameClaimType = System.Security.Claims.ClaimTypes.Name,
+            RoleClaimType = System.Security.Claims.ClaimTypes.Role
+        };
     });
 
 builder.Services.AddAuthorization();
 
+// Swagger + JWT
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "FUNewsManagement API", Version = "v1" });
+    var securityScheme = new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Description = "Enter 'Bearer {token}'",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+    };
+    c.AddSecurityDefinition("Bearer", securityScheme);
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        { securityScheme, Array.Empty<string>() }
+    });
+});
 
 var app = builder.Build();
 
@@ -60,10 +109,27 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
+
 app.Run();
+
+static IEdmModel GetEdmModel()
+{
+    var builder = new ODataConventionModelBuilder();
+
+    builder.EntitySet<Category>("Categories");
+    builder.EntitySet<NewsArticle>("NewsArticles");
+    builder.EntitySet<SystemAccount>("SystemAccounts");
+    builder.EntitySet<Tag>("Tags");
+
+    builder.EntityType<SystemAccount>().HasKey(sa => sa.AccountId);
+
+    return builder.GetEdmModel();
+}
 
 public sealed class RoleSettings
 {

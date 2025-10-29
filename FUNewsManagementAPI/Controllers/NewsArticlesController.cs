@@ -53,6 +53,7 @@ public class NewsArticlesController : ControllerBase
     public IActionResult GetPublicActive()
     {
         var query = _db.NewsArticles
+            .Include(n => n.Category) // Add this to include Category
             .AsNoTracking()
             .Where(n => n.NewsStatus == true)
             .OrderByDescending(n => n.CreatedDate);
@@ -65,6 +66,7 @@ public class NewsArticlesController : ControllerBase
     public async Task<ActionResult<NewsArticle>> GetPublicById(string id)
     {
         var item = await _db.NewsArticles
+            .Include(n => n.Category) // Add this
             .AsNoTracking()
             .FirstOrDefaultAsync(n => n.NewsArticleId == id && n.NewsStatus == true);
         if (item == null) return NotFound();
@@ -77,8 +79,9 @@ public class NewsArticlesController : ControllerBase
     [EnableQuery(PageSize = 50)]
     public IActionResult GetAll()
     {
-        // Expose IQueryable so OData can apply $filter/$orderby/$expand server-side
-        var query = _db.NewsArticles.AsNoTracking();
+        var query = _db.NewsArticles
+            .Include(n => n.Category) // Add this
+            .AsNoTracking();
         return Ok(query);
     }
 
@@ -188,6 +191,7 @@ public class NewsArticlesController : ControllerBase
         var currentUserId = short.Parse(userIdStr);
 
         var query = _db.NewsArticles
+            .Include(n => n.Category) // Add this
             .AsNoTracking()
             .Where(n => n.CreatedById == currentUserId)
             .OrderByDescending(n => n.CreatedDate);
@@ -210,6 +214,7 @@ public class NewsArticlesController : ControllerBase
             return BadRequest(new { message = "endDate must be >= startDate." });
 
         var query = _db.NewsArticles
+            .Include(n => n.Category) // Add this
             .AsNoTracking()
             .Where(n => n.CreatedDate >= start && n.CreatedDate <= end);
 
