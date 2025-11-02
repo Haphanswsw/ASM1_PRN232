@@ -30,6 +30,7 @@ public class AuthController : ControllerBase
         public string? Email { get; set; }
         public string? Password { get; set; }
     }
+
     public sealed class LoginResponse
     {
         public string Token { get; set; } = default!;
@@ -37,27 +38,48 @@ public class AuthController : ControllerBase
         public string Role { get; set; } = default!;
         public short AccountId { get; set; }
     }
+
     public sealed class UpdateMeRequest
     {
         public string? Name { get; set; }
         public string? Password { get; set; }
     }
 
+    // ✅ ADD: Response model đầy đủ cho /me
+    public sealed class MeResponse
+    {
+        public short AccountId { get; set; }
+        public string? AccountName { get; set; }
+        public string? AccountEmail { get; set; }
+        public int? AccountRole { get; set; }
+        public string RoleName { get; set; } = default!;
+    }
+
     [HttpPost("login")]
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequest req)
     {
+        Console.WriteLine($"[LOGIN] Attempt for: {req.Email}");
+
         if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
+        {
+            Console.WriteLine($"[LOGIN] Empty credentials");
             return Unauthorized(new { message = "Invalid credentials." });
+        }
 
         var account = await _db.SystemAccounts
             .FirstOrDefaultAsync(a => a.AccountEmail == req.Email && a.AccountPassword == req.Password);
 
         if (account == null)
+        {
+            Console.WriteLine($"[LOGIN] Account not found: {req.Email}");
             return Unauthorized(new { message = "Invalid credentials." });
+        }
 
         var roleName = MapRoleName(account.AccountRole);
         var (token, expiresAtUtc) = GenerateJwt(account, roleName);
+
+        Console.WriteLine($"[LOGIN] ✅ Success - AccountId: {account.AccountId}, Role: {roleName}");
 
         return Ok(new LoginResponse
         {
@@ -71,42 +93,129 @@ public class AuthController : ControllerBase
     [HttpPost("logout")]
     public IActionResult Logout()
     {
-        // Stateless JWT: client just discards the token.
         return Ok(new { message = "Logged out" });
     }
 
+    // ✅ FIX: Trả về đầy đủ thông tin từ database, không chỉ claims
     [HttpGet("me")]
     [Authorize]
-    public IActionResult Me()
+    public async Task<IActionResult> Me()
     {
-        if (!User.Identity?.IsAuthenticated ?? true)
-            return Unauthorized();
+        Console.WriteLine($"[GET ME] Authenticated: {User.Identity?.IsAuthenticated}");
 
-        return Ok(new
+        if (!User.Identity?.IsAuthenticated ?? true)
         {
-            accountId = User.FindFirstValue(ClaimTypes.NameIdentifier),
-            name = User.Identity?.Name,
-            email = User.FindFirstValue(ClaimTypes.Email),
-            role = User.FindFirstValue(ClaimTypes.Role)
+            Console.WriteLine($"[GET ME] Not authenticated");
+            return Unauthorized();
+        }
+
+        // Lấy AccountId từ JWT token
+        var accountIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        Console.WriteLine($"[GET ME] AccountId from JWT: {accountIdStr}");
+
+        if (string.IsNullOrEmpty(accountIdStr))
+        {
+            Console.WriteLine($"[GET ME] No AccountId in token");
+            return Unauthorized(new { message = "Invalid token: missing account ID" });
+        }
+
+        if (!short.TryParse(accountIdStr, out var accountId))
+        {
+            Console.WriteLine($"[GET ME] Invalid AccountId format: {accountIdStr}");
+            return BadRequest(new { message = "Invalid account ID format" });
+        }
+
+        // ✅ LẤY THÔNG TIN ĐẦY ĐỦ TỪ DATABASE Dựa vào AccountId trong JWT
+        var account = await _db.SystemAccounts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.AccountId == accountId);
+
+        if (account == null)
+        {
+            Console.WriteLine($"[GET ME] Account {accountId} not found in database");
+            return NotFound(new { message = "Account not found" });
+        }
+
+        var roleName = MapRoleName(account.AccountRole);
+        Console.WriteLine($"[GET ME] ✅ Found - Email: {account.AccountEmail}, Role: {roleName}");
+
+        // ✅ Trả về đầy đủ thông tin
+        return Ok(new MeResponse
+        {
+            AccountId = account.AccountId,
+            AccountName = account.AccountName,
+            AccountEmail = account.AccountEmail,
+            AccountRole = account.AccountRole,
+            RoleName = roleName
         });
     }
 
+    // ✅ FIX: Đảm bảo chỉ update account của user hiện tại
     [HttpPut("me")]
     [Authorize]
     public async Task<IActionResult> UpdateMe([FromBody] UpdateMeRequest req)
     {
+        Console.WriteLine($"[UPDATE ME] Request received");
+
+        // Lấy AccountId từ JWT token
         var idStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(idStr)) return Unauthorized();
-        var id = short.Parse(idStr);
+        Console.WriteLine($"[UPDATE ME] AccountId from JWT: {idStr}");
 
+        if (string.IsNullOrEmpty(idStr))
+        {
+            Console.WriteLine($"[UPDATE ME] No AccountId in token");
+            return Unauthorized(new { message = "Invalid token" });
+        }
+
+        if (!short.TryParse(idStr, out var id))
+        {
+            Console.WriteLine($"[UPDATE ME] Invalid AccountId format: {idStr}");
+            return BadRequest(new { message = "Invalid account ID format" });
+        }
+
+        // ✅ TÌM ACCOUNT CỦA USER HIỆN TẠI trong database
         var me = await _db.SystemAccounts.FirstOrDefaultAsync(a => a.AccountId == id);
-        if (me == null) return NotFound();
+        if (me == null)
+        {
+            Console.WriteLine($"[UPDATE ME] Account {id} not found");
+            return NotFound(new { message = $"Account with ID {id} not found" });
+        }
 
-        if (!string.IsNullOrWhiteSpace(req.Name)) me.AccountName = req.Name;
-        if (!string.IsNullOrWhiteSpace(req.Password)) me.AccountPassword = req.Password;
+        Console.WriteLine($"[UPDATE ME] Current account - Email: {me.AccountEmail}, Role: {me.AccountRole}");
+
+        // ✅ Cập nhật thông tin
+        bool hasChanges = false;
+
+        if (!string.IsNullOrWhiteSpace(req.Name))
+        {
+            Console.WriteLine($"[UPDATE ME] Updating name: '{me.AccountName}' -> '{req.Name}'");
+            me.AccountName = req.Name;
+            hasChanges = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(req.Password))
+        {
+            Console.WriteLine($"[UPDATE ME] Updating password for account {id}");
+            me.AccountPassword = req.Password;
+            hasChanges = true;
+        }
+
+        if (!hasChanges)
+        {
+            Console.WriteLine($"[UPDATE ME] No changes to save");
+            return BadRequest(new { message = "No fields to update" });
+        }
 
         await _db.SaveChangesAsync();
-        return NoContent();
+        Console.WriteLine($"[UPDATE ME] ✅ Successfully updated AccountId: {id}");
+
+        return Ok(new
+        {
+            message = "Profile updated successfully",
+            accountId = me.AccountId,
+            accountName = me.AccountName,
+            accountEmail = me.AccountEmail
+        });
     }
 
     private string MapRoleName(int? roleVal)
@@ -116,7 +225,7 @@ public class AuthController : ControllerBase
         {
             1 => "Staff",
             2 => "Lecturer",
-            _ => "Lecturer" // default to lowest privilege
+            _ => "Lecturer"
         };
     }
 
